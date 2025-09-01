@@ -2,9 +2,7 @@ package main
 
 import (
 	"flag"
-
 	"fyne.io/fyne/v2/app"
-
 	"luznocturna/luz-nocturna/internal/controllers"
 	"luznocturna/luz-nocturna/internal/views"
 )
@@ -23,7 +21,7 @@ func main() {
 	if *trayMode {
 		// Modo bandeja del sistema (sin ventana visible)
 		systrayManager := views.NewSystrayManager(controller, nil)
-		systrayManager.Start() // Esto es bloqueante
+		systrayManager.Run() // Esto es bloqueante
 	} else {
 		// Modo ventana normal con soporte opcional de bandeja
 		window := myApp.NewWindow("🌙 Luz Nocturna")
@@ -35,7 +33,7 @@ func main() {
 		// Crear manejador de bandeja (opcional, en segundo plano)
 		go func() {
 			systrayManager := views.NewSystrayManager(controller, mainView)
-			systrayManager.Start()
+			systrayManager.Run()
 		}()
 
 		// Configurar comportamiento al cerrar

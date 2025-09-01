@@ -5,14 +5,37 @@ import (
 	"luznocturna/luz-nocturna/internal/system"
 )
 
-// NightLightController maneja la lógica de la aplicación de luz nocturna
+/**
+ * NightLightController - Controlador principal de la aplicación
+ *
+ * Maneja toda la lógica de negocio para el control de temperatura de color
+ * del monitor. Coordina entre los modelos de configuración y el sistema
+ * de gestión de gamma del display.
+ *
+ * @struct {NightLightController}
+ * @property {*models.NightLightConfig} config - Configuración actual de luz nocturna
+ * @property {*models.AppConfig} appConfig - Configuración persistente de la aplicación
+ * @property {*system.GammaManager} gammaManager - Manejador de gamma del sistema
+ */
 type NightLightController struct {
 	config       *models.NightLightConfig
 	appConfig    *models.AppConfig
 	gammaManager *system.GammaManager
 }
 
-// NewNightLightController crea un nuevo controlador
+/**
+ * NewNightLightController - Constructor del controlador principal
+ *
+ * Inicializa el controlador con configuración por defecto y carga
+ * la configuración persistente si existe. Configura el manejador
+ * de gamma del sistema según la plataforma detectada.
+ *
+ * @returns {*NightLightController} Nueva instancia del controlador
+ *
+ * @example
+ *   controller := NewNightLightController()
+ *   controller.ApplyNightLight()
+ */
 func NewNightLightController() *NightLightController {
 	controller := &NightLightController{
 		config:       models.NewNightLightConfig(),
