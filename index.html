@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Luz Nocturna</title>
+<style>
+  body {
+    font-family: "Segoe UI", Roboto, sans-serif;
+    background: #f2f2f2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    margin: 0;
+  }
+
+  .window {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.1);
+    width: 320px;
+    padding: 20px;
+  }
+
+  .title {
+    font-size: 1.2em;
+    font-weight: 600;
+    margin-bottom: 10px;
+    text-align: center;
+  }
+
+  .slider-container {
+    margin: 20px 0;
+  }
+
+  input[type=range] {
+    width: 100%;
+  }
+
+  .label {
+    font-size: 0.9em;
+    color: #333;
+    margin-bottom: 5px;
+  }
+
+  .buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+  }
+
+  button {
+    background: #0078d4;
+    border: none;
+    color: white;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background 0.2s;
+  }
+
+  button:hover {
+    background: #005a9e;
+  }
+
+  button.secondary {
+    background: #ddd;
+    color: #333;
+  }
+
+  button.secondary:hover {
+    background: #bbb;
+  }
+</style>
+</head>
+<body>
+  <div class="window">
+    <div class="title">🌙 Luz Nocturna</div>
+
+    <div class="slider-container">
+      <div class="label">Temperatura de color: <span id="temp-value">4500K</span></div>
+      <input type="range" min="3000" max="6500" step="100" value="4500" 
+             oninput="document.getElementById('temp-value').textContent = this.value + 'K'">
+    </div>
+
+    <div class="buttons">
+      <button onclick="alert('Aplicar gamma')">Aplicar</button>
+      <button class="secondary" onclick="alert('Reset a 6500K')">Reset</button>
+    </div>
+  </div>
+</body>
+</html>
