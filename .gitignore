@@ -1,0 +1,45 @@
+# Binaries for programs and plugins
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go-specific ignores
+/bin/
+/pkg/
+/vendor/
+
+# Fyne-specific ignores
+/internal/cache/
+
+# Temporary files
+*~
+\#*
+.*.swp
+.DS_Store
+
+# Logs and databases
+*.log
+*.db
+*.sqlite
+
+# Dependency directories (if not using Go modules)
+/Godeps/
+/Dependencies/
+
+# Test binary
+*.test
+
+# Coverage files
+*.out
+*.cov
+
+# IDE specific files
+.idea/
+.vscode/
+
+# Fyne build directory
+/build/
+
+# dist folder created by fyne package
+/dist/

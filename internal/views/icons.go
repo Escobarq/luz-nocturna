@@ -1,0 +1,67 @@
+package views
+
+import (
+	_ "embed"
+)
+
+/**
+ * ICONOS DEL SISTEMA
+ * 
+ * Los iconos para la bandeja del sistema suelen usar estos tamaños:
+ * - 16x16px: Tamaño estándar para la mayoría de bandejas del sistema
+ * - 22x22px: Tamaño alternativo en algunos entornos
+ * - 24x24px: Tamaño para iconos de alta resolución
+ * - 32x32px: Para pantallas de alta densidad (HiDPI)
+ * 
+ * El formato SVG es ideal porque se escala automáticamente a cualquier tamaño.
+ * También puedes usar PNG en múltiples resoluciones (16x16, 24x24, 32x32).
+ */
+
+//go:embed icons/nightlight_icon.svg
+var nightlightIconSVG []byte
+
+//go:embed icons/nightlight_icon_16.png
+var nightlightIcon16 []byte
+
+//go:embed icons/nightlight_icon_24.png  
+var nightlightIcon24 []byte
+
+//go:embed icons/nightlight_icon_32.png
+var nightlightIcon32 []byte
+
+/**
+ * GetOptimalIcon - Selecciona el icono más apropiado según el sistema
+ * 
+ * Detecta el entorno de escritorio y devuelve el icono en el formato
+ * y tamaño más adecuado para la bandeja del sistema.
+ * 
+ * @returns {[]byte} Datos del icono en el formato óptimo
+ */
+func GetOptimalIcon() []byte {
+	// Por simplicidad, usar el icono SVG que se escala automáticamente
+	// En una implementación más avanzada, podrías detectar el entorno:
+	// - GNOME: Prefiere SVG o PNG 24x24
+	// - KDE: Funciona bien con PNG 16x16 y 22x22  
+	// - XFCE: PNG 16x16 es estándar
+	
+	return nightlightIconSVG
+}
+
+/**
+ * GetIconBySize - Obtiene icono por tamaño específico
+ * 
+ * @param {int} size - Tamaño deseado en píxeles (16, 24, 32)
+ * @returns {[]byte} Datos del icono en el tamaño solicitado
+ */
+func GetIconBySize(size int) []byte {
+	switch size {
+	case 16:
+		return nightlightIcon16
+	case 24:
+		return nightlightIcon24
+	case 32:
+		return nightlightIcon32
+	default:
+		return nightlightIconSVG // SVG se escala a cualquier tamaño
+	}
+}

@@ -46,20 +46,11 @@ func (c *NightLightController) UpdateTemperature(temp float64) {
 	c.appConfig.Save() // Ignorar errores por ahora
 }
 
-// ApplyNightLight aplica la configuración de luz nocturna
+// ApplyNightLight aplica la configuración de luz nocturna usando xrandr
 func (c *NightLightController) ApplyNightLight() error {
-	// Intentar aplicar con redshift primero
-	if c.gammaManager.IsRedshiftInstalled() {
-		if err := c.gammaManager.ApplyTemperature(c.config.Temperature); err != nil {
-			// Si falla redshift, intentar con xrandr
-			return c.gammaManager.ApplyWithXrandr(c.config.Temperature)
-		}
-	} else {
-		// Si redshift no está disponible, usar xrandr
-		if err := c.gammaManager.ApplyWithXrandr(c.config.Temperature); err != nil {
-			// Si ambos fallan, solo marcar como aplicado en el modelo
-			return c.config.Apply()
-		}
+	// Aplicar temperatura usando nuestro sistema xrandr
+	if err := c.gammaManager.ApplyTemperature(c.config.Temperature); err != nil {
+		return err
 	}
 
 	// Marcar como aplicado en el modelo
@@ -96,7 +87,7 @@ func (c *NightLightController) GetTemperatureRange() (min, max float64) {
 	return c.config.MinTemp, c.config.MaxTemp
 }
 
-// IsGammaSystemAvailable verifica si hay herramientas de gamma disponibles
-func (c *NightLightController) IsGammaSystemAvailable() bool {
-	return c.gammaManager.IsRedshiftInstalled()
+// GetDisplays devuelve la lista de displays detectados
+func (c *NightLightController) GetDisplays() []string {
+	return c.gammaManager.GetDisplays()
 }
