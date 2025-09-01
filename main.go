@@ -1,13 +1,26 @@
 package main
 
 import (
-  "fyne.io/fyne/v2/app"
-  "fyne.io/fyne/v2/widget"
+	"fyne.io/fyne/v2/app"
+
+	"luznocturna/luz-nocturna/internal/controllers"
+	"luznocturna/luz-nocturna/internal/views"
 )
 
 func main() {
-  a := app.New()
-  w := a.NewWindow("Hola Fyne")
-  w.SetContent(widget.NewLabel("¡Funciona!"))
-  w.ShowAndRun()
+	// Crear la aplicación
+	myApp := app.NewWithID("com.luznocturna.app")
+
+	// Crear ventana principal
+	window := myApp.NewWindow("🌙 Luz Nocturna")
+	window.CenterOnScreen()
+
+	// Crear controlador
+	controller := controllers.NewNightLightController()
+
+	// Crear vista
+	_ = views.NewNightLightView(window, controller)
+
+	// Mostrar y ejecutar la aplicación
+	window.ShowAndRun()
 }
