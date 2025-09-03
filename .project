@@ -1,0 +1,39 @@
+# ===================================
+# CONFIGURACIÓN DEL PROYECTO LUZ NOCTURNA
+# ===================================
+
+PROJECT_NAME="Luz Nocturna"
+PROJECT_VERSION="1.0.0" 
+PROJECT_DESCRIPTION="Control de temperatura de color para monitores Linux"
+PROJECT_AUTHOR="Juan"
+PROJECT_LICENSE="MIT"
+PROJECT_HOMEPAGE="https://github.com/Escobarq/luz-nocturna"
+
+# Tecnologías
+LANGUAGE="Go"
+UI_FRAMEWORK="Fyne.io v2.6.3"
+ARCHITECTURE="MVC (Model-View-Controller)"
+TARGET_OS="Linux"
+PROTOCOLS="X11, Wayland"
+
+# Funcionalidades Principales
+# - Control nativo de gamma con xrandr/Wayland
+# - Interfaz gráfica moderna con Fyne.io  
+# - Sistema de bandeja del sistema
+# - Presets de temperatura predefinidos
+# - Persistencia de configuración
+# - Empaquetado automático (DEB, Fyne)
+
+# Comandos de Desarrollo
+# make build    - Compilar aplicación
+# make run      - Ejecutar en desarrollo
+# make deb      - Crear paquete DEB
+# make packages - Crear todos los paquetes  
+# make clean    - Limpiar archivos generados
+# make help     - Ver todos los comandos
+
+# Configuración
+GO_VERSION="1.23.2"
+CONFIG_PATH="~/.config/luz-nocturna/config.json"
+INSTALL_PATH="/usr/local/bin/luz_nocturna"
+

@@ -17,16 +17,7 @@ Una aplicación de escritorio para controlar el filtro de luz nocturna en sistem
 
 ## 🚀 Instalación Rápida
 
-### Opción 1: Script de Instalación (Recomendado)
-```bash
-# Compilar
-go build -o luz-nocturna main.go
-
-# Instalar (incluye autostart opcional)
-./install.sh
-```
-
-### Opción 2: Manual
+### Manual
 ```bash
 # Compilar
 go build -o luz-nocturna main.go
@@ -61,10 +52,8 @@ luz-nocturna --tray            # Solo icono en bandeja
 ```
 luz-nocturna/
 ├── main.go                     # Punto de entrada
-├── install.sh                  # Script de instalación
 ├── go.mod                      # Dependencias de Go
 ├── README.md                   # Esta documentación
-├── DEVELOPMENT.md              # Guía de desarrollo
 └── internal/                   # Código interno
     ├── controllers/            # 🎮 Controladores (MVC)
     │   └── nightlight_controller.go
