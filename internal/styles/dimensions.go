@@ -1,7 +1,6 @@
 package styles
 
 import (
-	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -34,12 +33,3 @@ func StyleButton(btn *widget.Button, isPrimary bool) {
 	}
 }
 
-// Función para crear un tamaño fijo para elementos
-func FixedSize(width, height float32) fyne.Size {
-	return fyne.NewSize(width, height)
-}
-
-// Función para crear padding uniforme
-func UniformPadding(padding float32) fyne.Size {
-	return fyne.NewSize(padding, padding)
-}
