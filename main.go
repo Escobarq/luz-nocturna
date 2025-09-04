@@ -20,21 +20,20 @@ func main() {
 
 	if *trayMode {
 		// Modo bandeja del sistema (sin ventana visible)
-		systrayManager := views.NewSystrayManager(controller, nil)
-		systrayManager.Run() // Esto es bloqueante
+		systrayManager := views.NewSystrayManager(myApp, controller, nil)
+		systrayManager.CreateMenu()
+		myApp.Run() // Mantener la aplicación corriendo para la bandeja
 	} else {
-		// Modo ventana normal con soporte opcional de bandeja
+		// Modo ventana normal con soporte de bandeja
 		window := myApp.NewWindow("🌙 Luz Nocturna")
 		window.CenterOnScreen()
 
 		// Crear vista principal
 		mainView := views.NewNightLightView(window, controller)
 
-		// Crear manejador de bandeja (opcional, en segundo plano)
-		go func() {
-			systrayManager := views.NewSystrayManager(controller, mainView)
-			systrayManager.Run()
-		}()
+		// Crear y configurar el menú de la bandeja
+		systrayManager := views.NewSystrayManager(myApp, controller, mainView)
+		systrayManager.CreateMenu()
 
 		// Configurar comportamiento al cerrar
 		window.SetCloseIntercept(func() {

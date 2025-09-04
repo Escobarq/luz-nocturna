@@ -1,7 +1,7 @@
 APP_NAME=luz_nocturna
 DEB_NAME=luz-nocturna
 PACKAGE_ID=com.luznocturna.luz_nocturna
-VERSION=1.0.0
+VERSION=1.0.1
 MAINTAINER=JEscobarQ <jdescobar180@soy-sena.edu.co>
 DESCRIPTION=Control de temperatura de color para monitores Linux
 HOMEPAGE=https://github.com/juan/luz-nocturna

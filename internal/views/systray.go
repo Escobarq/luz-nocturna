@@ -2,150 +2,94 @@ package views
 
 import (
 	"fmt"
-	"luznocturna/luz-nocturna/internal/controllers"
 
-	"fyne.io/systray"
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/driver/desktop"
+	"luznocturna/luz-nocturna/internal/controllers"
+	"luznocturna/luz-nocturna/internal/models"
 )
 
 // SystrayManager - Manejador del icono de bandeja del sistema
 type SystrayManager struct {
-	controller      *controllers.NightLightController
-	mainView        *NightLightView
-	applyItem       *systray.MenuItem
-	resetItem       *systray.MenuItem
-	tempWarmItem    *systray.MenuItem
-	tempNeutralItem *systray.MenuItem
-	tempCoolItem    *systray.MenuItem
-	tempDayItem     *systray.MenuItem
-	showItem        *systray.MenuItem
-	quitItem        *systray.MenuItem
+	controller *controllers.NightLightController
+	mainView   *NightLightView
+	app        fyne.App
 }
 
 // NewSystrayManager - Constructor del manejador de bandeja
-func NewSystrayManager(controller *controllers.NightLightController, mainView *NightLightView) *SystrayManager {
+func NewSystrayManager(app fyne.App, controller *controllers.NightLightController, mainView *NightLightView) *SystrayManager {
 	return &SystrayManager{
+		app:        app,
 		controller: controller,
 		mainView:   mainView,
 	}
 }
 
-// Run - Ejecuta el bucle principal de la bandeja
-func (s *SystrayManager) Run() {
-	systray.Run(s.onReady, s.onExit)
-}
+// CreateMenu - Crea y configura el menú de la bandeja del sistema
+func (s *SystrayManager) CreateMenu() {
+	if desk, ok := s.app.(desktop.App); ok {
+		// 1. Crear el submenú de presets
+		presetsSubMenu := fyne.NewMenu("Presets", // El título aquí es para la estructura interna
+			fyne.NewMenuItem(fmt.Sprintf("🔥 Cálido (%.0fK)", models.CandleLightTemp), func() {
+				s.applyTemperaturePreset(int(models.CandleLightTemp), "Cálido")
+			}),
+			fyne.NewMenuItem(fmt.Sprintf("🌅 Medio (%.0fK)", models.NeutralWhiteTemp), func() {
+				s.applyTemperaturePreset(int(models.NeutralWhiteTemp), "Medio")
+			}),
+			fyne.NewMenuItem(fmt.Sprintf("☀️ Frío (%.0fK)", models.CoolWhiteTemp), func() {
+				s.applyTemperaturePreset(int(models.CoolWhiteTemp), "Neutral")
+			}),
+			fyne.NewMenuItem(fmt.Sprintf("💡 Día (%.0fK)", models.DaylightTemp), func() {
+				s.applyTemperaturePreset(int(models.DaylightTemp), "Día")
+			}),
+		)
 
-// onReady - Callback ejecutado cuando la bandeja está lista
-func (s *SystrayManager) onReady() {
-	// Configurar icono del systray
-	iconData := GetOptimalIcon()
-	systray.SetIcon(iconData)
-	systray.SetTitle("Luz Nocturna")
-	systray.SetTooltip("Control de temperatura de color")
+		// 2. Crear el ítem de menú que contendrá el submenú
+		presetsMenuItem := fyne.NewMenuItem("🌡️ Presets", nil)
+		presetsMenuItem.ChildMenu = presetsSubMenu
 
-	s.applyItem = systray.AddMenuItem("🌙 Aplicar", "Aplica la temperatura actual")
-	s.resetItem = systray.AddMenuItem("�� Resetear", "Restaura configuración normal")
+		// 3. Crear el menú principal y añadir el ítem con el submenú
+		menuItems := []*fyne.MenuItem{
+			fyne.NewMenuItem("🌙 Aplicar", s.applyCurrentSettings),
+			fyne.NewMenuItem("🔄 Resetear", s.resetToNormal),
+			fyne.NewMenuItemSeparator(),
+			presetsMenuItem, // Añadir el ítem que despliega el submenú
+			fyne.NewMenuItemSeparator(),
+		}
 
-	systray.AddSeparator()
+		if s.mainView != nil {
+			menuItems = append(menuItems, fyne.NewMenuItem("📱 Mostrar", s.showMainWindow))
+		}
 
-	tempSubMenu := systray.AddMenuItem("🌡️ Presets", "Temperaturas predefinidas")
-	s.tempWarmItem = tempSubMenu.AddSubMenuItem("🔥 Cálido (2700K)", "Temperatura cálida")
-	s.tempNeutralItem = tempSubMenu.AddSubMenuItem("🌅 Medio (3500K)", "Temperatura media")
-	s.tempCoolItem = tempSubMenu.AddSubMenuItem("☀️ Neutral (5000K)", "Temperatura neutra")
-	s.tempDayItem = tempSubMenu.AddSubMenuItem("💡 Día (6500K)", "Temperatura día")
+		menuItems = append(menuItems, fyne.NewMenuItem("❌ Salir", func() {
+			s.app.Quit()
+		}))
 
-	systray.AddSeparator()
+		mainMenu := fyne.NewMenu("Luz Nocturna", menuItems...)
 
-	if s.mainView != nil {
-		s.showItem = systray.AddMenuItem("📱 Mostrar", "Mostrar ventana")
+		desk.SetSystemTrayMenu(mainMenu)
+
+		// Configurar icono
+		iconData := GetOptimalIcon()
+		if len(iconData) > 0 {
+			desk.SetSystemTrayIcon(fyne.NewStaticResource("trayIcon", iconData))
+		}
 	}
-	s.quitItem = systray.AddMenuItem("❌ Salir", "Salir")
-
-	s.handleEvents()
-}
-
-// handleEvents - Maneja eventos del menú
-func (s *SystrayManager) handleEvents() {
-	go func() {
-		for range s.applyItem.ClickedCh {
-			s.applyCurrentSettings()
-		}
-	}()
-
-	go func() {
-		for range s.resetItem.ClickedCh {
-			s.resetToNormal()
-		}
-	}()
-
-	go func() {
-		for range s.tempWarmItem.ClickedCh {
-			s.applyTemperaturePreset(2700, "Cálido")
-		}
-	}()
-
-	go func() {
-		for range s.tempNeutralItem.ClickedCh {
-			s.applyTemperaturePreset(3500, "Medio")
-		}
-	}()
-
-	go func() {
-		for range s.tempCoolItem.ClickedCh {
-			s.applyTemperaturePreset(5000, "Neutral")
-		}
-	}()
-
-	go func() {
-		for range s.tempDayItem.ClickedCh {
-			s.applyTemperaturePreset(6500, "Día")
-		}
-	}()
-
-	if s.showItem != nil {
-		go func() {
-			for range s.showItem.ClickedCh {
-				s.showMainWindow()
-			}
-		}()
-	}
-
-	go func() {
-		for range s.quitItem.ClickedCh {
-			systray.Quit()
-		}
-	}()
 }
 
 func (s *SystrayManager) applyCurrentSettings() {
-	config := s.controller.GetConfig()
-	err := s.controller.ApplyNightLight()
-	if err != nil {
-		systray.SetTooltip(fmt.Sprintf("Error: %v", err))
-		return
-	}
-	systray.SetTooltip(fmt.Sprintf("Aplicado: %dK", int(config.Temperature)))
+	_ = s.controller.ApplyNightLight()
 }
 
 func (s *SystrayManager) resetToNormal() {
-	err := s.controller.ResetNightLight()
-	if err != nil {
-		systray.SetTooltip(fmt.Sprintf("Error: %v", err))
-		return
-	}
-	systray.SetTooltip("Reseteado a normal")
+	_ = s.controller.ResetNightLight()
 }
 
 func (s *SystrayManager) applyTemperaturePreset(temperature int, presetName string) {
 	config := s.controller.GetConfig()
 	config.Temperature = float64(temperature)
 
-	err := s.controller.ApplyNightLight()
-	if err != nil {
-		systray.SetTooltip(fmt.Sprintf("Error: %v", err))
-		return
-	}
-
-	systray.SetTooltip(fmt.Sprintf("%s (%dK) aplicado", presetName, temperature))
+	_ = s.controller.ApplyNightLight()
 
 	if s.mainView != nil {
 		s.mainView.updateTemperatureDisplay()
@@ -157,8 +101,4 @@ func (s *SystrayManager) showMainWindow() {
 		s.mainView.window.Show()
 		s.mainView.window.RequestFocus()
 	}
-}
-
-func (s *SystrayManager) onExit() {
-	// Limpieza si es necesaria
 }
