@@ -8,10 +8,22 @@ import (
 
 // AppConfig representa la configuración persistente de la aplicación
 type AppConfig struct {
-	LastTemperature float64 `json:"last_temperature"`
-	AutoStart       bool    `json:"auto_start"`
-	MinimizeToTray  bool    `json:"minimize_to_tray"`
-	StartMinimized  bool    `json:"start_minimized"`
+	LastTemperature float64        `json:"last_temperature"`
+	AutoStart       bool           `json:"auto_start"`
+	MinimizeToTray  bool           `json:"minimize_to_tray"`
+	StartMinimized  bool           `json:"start_minimized"`
+	ScheduleEnabled bool           `json:"schedule_enabled"`
+	Schedule        ScheduleConfig `json:"schedule"`
+}
+
+// ScheduleConfig representa la configuración de horarios automáticos
+type ScheduleConfig struct {
+	StartTime          string  `json:"start_time"`           // Formato "HH:MM" para inicio del filtro nocturno
+	EndTime            string  `json:"end_time"`             // Formato "HH:MM" para fin del filtro nocturno
+	NightTemp          float64 `json:"night_temp"`           // Temperatura nocturna (ej: 3000K)
+	DayTemp            float64 `json:"day_temp"`             // Temperatura diurna (ej: 6500K)
+	TransitionTime     int     `json:"transition_time"`      // Tiempo de transición en minutos
+	AutoDetectLocation bool    `json:"auto_detect_location"` // Detectar ubicación para sunrise/sunset automático
 }
 
 // NewAppConfig crea una nueva configuración con valores por defecto
@@ -21,6 +33,15 @@ func NewAppConfig() *AppConfig {
 		AutoStart:       false,
 		MinimizeToTray:  true,
 		StartMinimized:  false,
+		ScheduleEnabled: false,
+		Schedule: ScheduleConfig{
+			StartTime:          "20:00",
+			EndTime:            "07:00",
+			NightTemp:          3200,
+			DayTemp:            6500,
+			TransitionTime:     30,
+			AutoDetectLocation: false,
+		},
 	}
 }
 

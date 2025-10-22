@@ -44,6 +44,13 @@ type NightLightView struct {
 	toggleButton      *widget.Button
 	displayInfo       *widget.Label
 	presetButtons     *fyne.Container
+	scheduleCheck     *widget.Check
+	startTimeEntry    *widget.Entry
+	endTimeEntry      *widget.Entry
+	nightTempSlider   *widget.Slider
+	dayTempSlider     *widget.Slider
+	transitionSlider  *widget.Slider
+	scheduleInfo      *widget.Label
 }
 
 /**
@@ -83,8 +90,8 @@ func NewNightLightView(window fyne.Window, controller *controllers.NightLightCon
  */
 func (v *NightLightView) setupUI() {
 	// Configurar ventana principal
-	v.window.Resize(fyne.NewSize(styles.WindowWidth, styles.WindowHeight+150))
-	v.window.SetFixedSize(true)
+	v.window.Resize(fyne.NewSize(styles.WindowWidth, styles.WindowHeight+200))
+	v.window.SetFixedSize(false)
 
 	// Crear todos los widgets de la interfaz
 	v.createWidgets()
@@ -96,6 +103,9 @@ func (v *NightLightView) setupUI() {
 	// Sincronizar estado inicial con el modelo
 	v.updateTemperatureDisplay()
 	v.updateDisplayInfo()
+
+	// Iniciar actualizador de información de programación
+	v.startScheduleInfoUpdater()
 }
 
 /**
@@ -141,6 +151,54 @@ func (v *NightLightView) createWidgets() {
 	displays := v.controller.GetDisplays()
 	v.displayInfo = widget.NewLabel(fmt.Sprintf("📺 Displays: %v", displays))
 	v.displayInfo.TextStyle = fyne.TextStyle{Monospace: true}
+
+	// === CONTROLES DE PROGRAMACIÓN AUTOMÁTICA ===
+	v.createScheduleWidgets()
+}
+
+/**
+ * createScheduleWidgets - Crea los controles de programación automática
+ *
+ * @private
+ */
+func (v *NightLightView) createScheduleWidgets() {
+	schedule := v.controller.GetScheduleConfig()
+
+	// Checkbox para habilitar/deshabilitar programación
+	v.scheduleCheck = widget.NewCheck("🕐 Programación automática", v.onScheduleToggled)
+	v.scheduleCheck.SetChecked(v.controller.IsScheduleEnabled())
+
+	// Entradas de tiempo
+	v.startTimeEntry = widget.NewEntry()
+	v.startTimeEntry.SetText(schedule.StartTime)
+	v.startTimeEntry.OnChanged = v.onScheduleTimeChanged
+
+	v.endTimeEntry = widget.NewEntry()
+	v.endTimeEntry.SetText(schedule.EndTime)
+	v.endTimeEntry.OnChanged = v.onScheduleTimeChanged
+
+	// Sliders de temperatura
+	v.nightTempSlider = widget.NewSlider(3000, 6500)
+	v.nightTempSlider.Value = schedule.NightTemp
+	v.nightTempSlider.Step = 100
+	v.nightTempSlider.OnChanged = v.onScheduleTempChanged
+
+	v.dayTempSlider = widget.NewSlider(3000, 6500)
+	v.dayTempSlider.Value = schedule.DayTemp
+	v.dayTempSlider.Step = 100
+	v.dayTempSlider.OnChanged = v.onScheduleTempChanged
+
+	// Slider de tiempo de transición
+	v.transitionSlider = widget.NewSlider(0, 60)
+	v.transitionSlider.Value = float64(schedule.TransitionTime)
+	v.transitionSlider.Step = 5
+	v.transitionSlider.OnChanged = v.onScheduleTempChanged
+
+	// Información de próximo cambio
+	v.scheduleInfo = widget.NewLabel("Programación deshabilitada")
+	v.scheduleInfo.TextStyle = fyne.TextStyle{Italic: true}
+
+	v.updateScheduleInfo()
 }
 
 /**
@@ -212,6 +270,9 @@ func (v *NightLightView) createMainLayout() fyne.CanvasObject {
 		v.toggleButton,
 	)
 
+	// Sección de programación automática
+	scheduleSection := v.createScheduleSection()
+
 	// Layout principal con separadores para claridad visual
 	mainContainer := container.NewVBox(
 		title,
@@ -222,11 +283,71 @@ func (v *NightLightView) createMainLayout() fyne.CanvasObject {
 		widget.NewSeparator(),
 		buttonContainer,
 		widget.NewSeparator(),
+		scheduleSection,
+		widget.NewSeparator(),
 		v.displayInfo,
 	)
 
 	// Contenedor con padding para mejor apariencia
 	return container.NewPadded(mainContainer)
+}
+
+/**
+ * createScheduleSection - Crea la sección de programación automática
+ *
+ * @returns {fyne.CanvasObject} Contenedor de la sección de programación
+ * @private
+ */
+func (v *NightLightView) createScheduleSection() fyne.CanvasObject {
+	// Contenedor principal de programación
+	scheduleContainer := container.NewVBox(
+		v.scheduleCheck,
+	)
+
+	// Controles de horarios (solo se muestran si está habilitado)
+	timeContainer := container.NewGridWithColumns(4,
+		widget.NewLabel("Inicio:"),
+		v.startTimeEntry,
+		widget.NewLabel("Fin:"),
+		v.endTimeEntry,
+	)
+
+	// Controles de temperatura
+	tempContainer := container.NewVBox(
+		widget.NewLabel(fmt.Sprintf("🌙 Temperatura nocturna: %.0fK", v.nightTempSlider.Value)),
+		v.nightTempSlider,
+		widget.NewLabel(fmt.Sprintf("☀️ Temperatura diurna: %.0fK", v.dayTempSlider.Value)),
+		v.dayTempSlider,
+	)
+
+	// Control de transición
+	transitionContainer := container.NewVBox(
+		widget.NewLabel(fmt.Sprintf("⏱️ Transición: %.0f min", v.transitionSlider.Value)),
+		v.transitionSlider,
+	)
+
+	// Información de estado
+	infoContainer := container.NewVBox(
+		v.scheduleInfo,
+	)
+
+	// Crear contenedor colapsable para controles de programación
+	configContainer := container.NewVBox()
+
+	// Agregar controles condicionalmente
+	if v.controller.IsScheduleEnabled() {
+		configContainer.Add(timeContainer)
+		configContainer.Add(tempContainer)
+		configContainer.Add(transitionContainer)
+	}
+
+	scheduleContainer.Add(configContainer)
+	scheduleContainer.Add(infoContainer)
+
+	return container.NewVBox(
+		widget.NewLabel("🕐 Programación Automática:"),
+		scheduleContainer,
+	)
 }
 
 // =====================================================
@@ -287,7 +408,68 @@ func (v *NightLightView) onResetClicked() {
 	v.temperatureSlider.Value = config.Temperature
 	v.updateTemperatureDisplay()
 
-	v.showSuccessDialog("↺ Reseteado a valores normales")
+	v.showSuccessDialog("✅ Gamma reseteada a valores normales")
+}
+
+/**
+ * onScheduleToggled - Manejador del checkbox de programación automática
+ *
+ * @param {bool} enabled - Estado del checkbox
+ * @callback - Evento del checkbox
+ */
+func (v *NightLightView) onScheduleToggled(enabled bool) {
+	v.controller.EnableSchedule(enabled)
+	v.refreshScheduleSection()
+	v.updateScheduleInfo()
+}
+
+/**
+ * onScheduleTimeChanged - Manejador de cambios en entradas de tiempo
+ *
+ * @param {string} text - Nuevo texto en la entrada
+ * @callback - Evento de cambio en entradas de tiempo
+ */
+func (v *NightLightView) onScheduleTimeChanged(text string) {
+	if !v.controller.IsScheduleEnabled() {
+		return
+	}
+
+	v.updateScheduleConfiguration()
+}
+
+/**
+ * onScheduleTempChanged - Manejador de cambios en sliders de temperatura
+ *
+ * @param {float64} value - Nuevo valor del slider
+ * @callback - Evento de cambio en sliders
+ */
+func (v *NightLightView) onScheduleTempChanged(value float64) {
+	if !v.controller.IsScheduleEnabled() {
+		return
+	}
+
+	v.updateScheduleConfiguration()
+	v.refreshScheduleSection() // Actualizar labels de temperatura
+}
+
+/**
+ * updateScheduleConfiguration - Actualiza la configuración de horarios
+ *
+ * @private
+ */
+func (v *NightLightView) updateScheduleConfiguration() {
+	// Obtener valores actuales de la UI
+	startTime := v.startTimeEntry.Text
+	endTime := v.endTimeEntry.Text
+	nightTemp := v.nightTempSlider.Value
+	dayTemp := v.dayTempSlider.Value
+	transitionTime := int(v.transitionSlider.Value)
+
+	// Actualizar configuración
+	v.controller.UpdateScheduleConfig(startTime, endTime, nightTemp, dayTemp, transitionTime)
+
+	// Actualizar información
+	v.updateScheduleInfo()
 }
 
 /**
@@ -348,6 +530,75 @@ func (v *NightLightView) updateTemperatureDisplay() {
 func (v *NightLightView) updateDisplayInfo() {
 	displays := v.controller.GetDisplays()
 	v.displayInfo.SetText(fmt.Sprintf("📺 Displays: %v", displays))
+}
+
+/**
+ * updateScheduleInfo - Actualiza la información de programación automática
+ *
+ * @private
+ */
+func (v *NightLightView) updateScheduleInfo() {
+	if !v.controller.IsScheduleEnabled() {
+		v.scheduleInfo.SetText("Programación deshabilitada")
+		return
+	}
+
+	description, temp, duration := v.controller.GetNextScheduleChange()
+
+	if duration > 0 {
+		hours := int(duration.Hours())
+		minutes := int(duration.Minutes()) % 60
+		v.scheduleInfo.SetText(fmt.Sprintf("🔔 %s en %02d:%02d (%.0fK)",
+			description, hours, minutes, temp))
+	} else {
+		v.scheduleInfo.SetText("🔔 " + description)
+	}
+}
+
+/**
+ * updateScheduleLabels - Actualiza los labels de los sliders de programación
+ *
+ * @private
+ */
+func (v *NightLightView) updateScheduleLabels() {
+	// Esta función se llamará desde createScheduleSection cuando se recree el layout
+	// Los labels se actualizan automáticamente en createScheduleSection
+}
+
+/**
+ * refreshScheduleSection - Refresca la sección de programación automática
+ *
+ * @private
+ */
+func (v *NightLightView) refreshScheduleSection() {
+	// Ajustar tamaño de ventana según estado de programación
+	if v.controller.IsScheduleEnabled() {
+		v.window.Resize(fyne.NewSize(styles.WindowWidth, styles.WindowHeight+300))
+	} else {
+		v.window.Resize(fyne.NewSize(styles.WindowWidth, styles.WindowHeight+150))
+	}
+
+	// Recrear el contenido de la ventana para mostrar/ocultar controles de programación
+	content := v.createMainLayout()
+	v.window.SetContent(content)
+}
+
+/**
+ * startScheduleInfoUpdater - Inicia el actualizador automático de información de programación
+ *
+ * @private
+ */
+func (v *NightLightView) startScheduleInfoUpdater() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			if v.controller.IsScheduleEnabled() {
+				v.updateScheduleInfo()
+			}
+		}
+	}()
 }
 
 // =====================================================

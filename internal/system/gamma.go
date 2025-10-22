@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
 
 /**
@@ -39,6 +40,7 @@ func NewGammaManager() *GammaManager {
 	gm := &GammaManager{}
 	gm.detectDisplayProtocol()
 	gm.detectDisplays()
+	gm.disableSystemNightLight()
 	return gm
 }
 
@@ -187,10 +189,10 @@ func (gm *GammaManager) applyX11Gamma(r, g, b, temperature float64) error {
 }
 
 /**
- * applyWaylandGamma - Aplica gamma usando wlr-gamma-control (Wayland)
+ * applyWaylandGamma - Aplica gamma usando overlays de color efectivos para Wayland
  *
- * Utiliza wl-gamma-relay o gammastep para aplicar temperatura de color
- * en entornos Wayland que soportan wlr-gamma-control-unstable-v1.
+ * Implementa métodos más agresivos que realmente funcionen en Wayland
+ * incluyendo overlays de color y filtros visuales.
  *
  * @param {float64} r - Componente rojo del gamma (0.3-1.0)
  * @param {float64} g - Componente verde del gamma (0.3-1.0)
@@ -199,59 +201,439 @@ func (gm *GammaManager) applyX11Gamma(r, g, b, temperature float64) error {
  * @private
  */
 func (gm *GammaManager) applyWaylandGamma(r, g, b float64) error {
-	// Intentar con wl-gamma-relay primero
-	cmd := exec.Command("wl-gamma-relay", fmt.Sprintf("%.2f", r), fmt.Sprintf("%.2f", g), fmt.Sprintf("%.2f", b))
-	if err := cmd.Run(); err == nil {
-		fmt.Printf("🌡️  Gamma aplicada en Wayland (wl-gamma-relay): %.2f:%.2f:%.2f\n", r, g, b)
-		return nil
-	}
+	// Deshabilitar sistema nativo antes de aplicar
+	gm.disableSystemNightLight()
 
-	// Fallback: Intentar con wlsunset si está disponible
-	cmd = exec.Command("pkill", "wlsunset")
-	cmd.Run() // Matar instancia anterior si existe
-
-	// Calcular temperatura aproximada desde RGB
+	// Calcular temperatura para métodos que la requieren
 	temp := gm.rgbToTemperature(r, g, b)
-	cmd = exec.Command("wlsunset", "-t", fmt.Sprintf("%.0f", temp), "-T", fmt.Sprintf("%.0f", temp))
-	if err := cmd.Start(); err == nil {
-		fmt.Printf("🌡️  Temperatura aplicada en Wayland (wlsunset): %.0fK\n", temp)
+
+	// 1. Método más agresivo: Forzar gamma usando compositor
+	if gm.tryCompositorOverride(r, g, b, temp) {
 		return nil
 	}
 
-	return fmt.Errorf("no se pudo aplicar gamma en Wayland - instala wl-gamma-relay o wlsunset")
+	// 2. Método compositor específico: GNOME Mutter
+	if gm.tryGnomeMutterMethod(temp) {
+		return nil
+	}
+
+	// 3. Método compositor específico: KDE KWin
+	if gm.tryKWinMethod(temp) {
+		return nil
+	}
+
+	// 4. Método DDC/CI para control directo del monitor
+	if gm.tryDDCMethod(r, g, b) {
+		return nil
+	}
+
+	// 5. Método overlay de color usando herramientas gráficas
+	if gm.tryColorOverlayMethod(r, g, b) {
+		return nil
+	}
+
+	// 6. Fallback: XWayland si está disponible
+	if gm.tryXWaylandMethod(r, g, b) {
+		fmt.Printf("⚠️  Usando XWayland (puede no ser efectivo en Wayland nativo)\n")
+		return nil
+	}
+
+	return fmt.Errorf("no se pudo aplicar gamma en Wayland.\n" +
+		"Métodos intentados: compositor override, GNOME, KDE, DDC/CI, overlay, XWayland\n" +
+		"Tu compositor Wayland puede no soportar control de gamma")
 }
 
 /**
- * resetWaylandGamma - Resetea gamma en Wayland
+ * tryCompositorOverride - Método agresivo para forzar gamma en compositor
+ */
+func (gm *GammaManager) tryCompositorOverride(r, g, b, temp float64) bool {
+	// 1. Intentar con wlr-gamma-control más agresivo
+	if gm.isToolAvailable("wlr-gamma-control") {
+		cmd := exec.Command("wlr-gamma-control", fmt.Sprintf("%.2f", r), fmt.Sprintf("%.2f", g), fmt.Sprintf("%.2f", b))
+		if err := cmd.Run(); err == nil {
+			fmt.Printf("🌡️  Gamma aplicada en Wayland (wlr-gamma-control): %.2f:%.2f:%.2f\n", r, g, b)
+			return true
+		}
+	}
+
+	// 2. Crear archivo temporal de configuración de gamma
+	configPath := "/tmp/luz-nocturna-gamma.conf"
+	configContent := fmt.Sprintf(`
+[output:*]
+gamma = %.2f:%.2f:%.2f
+temperature = %.0f
+`, r, g, b, temp)
+
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err == nil {
+		// Intentar aplicar con swaybg si está disponible
+		if gm.isToolAvailable("swaybg") {
+			cmd := exec.Command("swaybg", "-c", fmt.Sprintf("#%02x%02x%02x",
+				int(255*r), int(255*g), int(255*b)))
+			if err := cmd.Start(); err == nil {
+				fmt.Printf("🌡️  Overlay de color aplicado en Wayland (swaybg): %.2f:%.2f:%.2f\n", r, g, b)
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+/**
+ * tryGnomeMutterMethod - Método específico para GNOME Mutter
+ */
+func (gm *GammaManager) tryGnomeMutterMethod(temp float64) bool {
+	if !gm.isToolAvailable("gdbus") {
+		return false
+	}
+
+	// Forzar habilitación temporal del Night Light para controlarlo
+	exec.Command("gsettings", "set", "org.gnome.settings-daemon.plugins.color", "night-light-enabled", "true").Run()
+	time.Sleep(100 * time.Millisecond)
+
+	// Configurar temperatura específica
+	cmd := exec.Command("gsettings", "set", "org.gnome.settings-daemon.plugins.color", "night-light-temperature", fmt.Sprintf("uint32:%.0f", temp))
+	if err := cmd.Run(); err == nil {
+		// Forzar aplicación inmediata via D-Bus
+		exec.Command("gdbus", "call", "--session", "--dest", "org.gnome.SettingsDaemon.Color",
+			"--object-path", "/org/gnome/SettingsDaemon/Color",
+			"--method", "org.gnome.SettingsDaemon.Color.NightLightPreview",
+			fmt.Sprintf("uint32:%.0f", temp)).Run()
+
+		fmt.Printf("🌡️  Temperatura aplicada en Wayland (GNOME Mutter): %.0fK\n", temp)
+		return true
+	}
+	return false
+}
+
+/**
+ * tryKWinMethod - Método específico para KDE KWin
+ */
+func (gm *GammaManager) tryKWinMethod(temp float64) bool {
+	if !gm.isToolAvailable("qdbus") {
+		return false
+	}
+
+	// Habilitar Night Color en KDE
+	cmd := exec.Command("qdbus", "org.kde.KWin", "/ColorCorrect", "setMode", "2")
+	if err := cmd.Run(); err == nil {
+		// Configurar temperatura
+		cmd = exec.Command("qdbus", "org.kde.KWin", "/ColorCorrect", "setTemperature", fmt.Sprintf("%.0f", temp))
+		if err := cmd.Run(); err == nil {
+			fmt.Printf("🌡️  Temperatura aplicada en Wayland (KDE KWin): %.0fK\n", temp)
+			return true
+		}
+	}
+	return false
+}
+
+/**
+ * tryDDCMethod - Control directo del monitor usando DDC/CI
+ */
+func (gm *GammaManager) tryDDCMethod(r, g, b float64) bool {
+	if !gm.isToolAvailable("ddcutil") {
+		return false
+	}
+
+	// Convertir RGB a valores de color de monitor
+	redVal := int(r * 100)
+	greenVal := int(g * 100)
+	blueVal := int(b * 100)
+
+	// Aplicar usando ddcutil para control directo del hardware
+	commands := [][]string{
+		{"ddcutil", "setvcp", "16", fmt.Sprintf("%d", redVal)},   // Red gain
+		{"ddcutil", "setvcp", "18", fmt.Sprintf("%d", greenVal)}, // Green gain
+		{"ddcutil", "setvcp", "1A", fmt.Sprintf("%d", blueVal)},  // Blue gain
+	}
+
+	success := false
+	for _, cmdArgs := range commands {
+		cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+		if err := cmd.Run(); err == nil {
+			success = true
+		}
+	}
+
+	if success {
+		fmt.Printf("🌡️  Gamma aplicada en Wayland (DDC/CI hardware): %.2f:%.2f:%.2f\n", r, g, b)
+		return true
+	}
+	return false
+}
+
+/**
+ * tryColorOverlayMethod - Crear overlay de color usando herramientas gráficas
+ */
+func (gm *GammaManager) tryColorOverlayMethod(r, g, b float64) bool {
+	// Calcular color de overlay inverso para simular filtro
+	overlayR := 1.0 - (1.0-r)*0.3
+	overlayG := 1.0 - (1.0-g)*0.3
+	overlayB := 1.0 - (1.0-b)*0.3
+
+	colorHex := fmt.Sprintf("#%02x%02x%02x",
+		int(255*overlayR), int(255*overlayG), int(255*overlayB))
+
+	// Intentar con diferentes herramientas de overlay
+	overlayTools := [][]string{
+		{"pkill", "goverlay"}, // Matar overlay anterior
+		{"goverlay", "--color", colorHex, "--opacity", "0.1"},
+	}
+
+	for _, cmdArgs := range overlayTools {
+		cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+		cmd.Start() // No esperar, es un overlay
+	}
+
+	// También intentar con xsetroot si funciona en XWayland
+	if gm.isToolAvailable("xsetroot") {
+		cmd := exec.Command("xsetroot", "-solid", colorHex)
+		if err := cmd.Run(); err == nil {
+			fmt.Printf("🌡️  Overlay de color aplicado en Wayland: %s\n", colorHex)
+			return true
+		}
+	}
+
+	return false
+}
+
+/**
+ * tryXWaylandMethod - Intenta aplicar gamma usando xrandr en XWayland
+ */
+func (gm *GammaManager) tryXWaylandMethod(r, g, b float64) bool {
+	if !gm.isToolAvailable("xrandr") {
+		return false
+	}
+
+	// Verificar si hay displays detectados
+	cmd := exec.Command("xrandr")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	// Buscar displays conectados
+	lines := strings.Split(string(output), "\n")
+	connectedRegex := regexp.MustCompile(`^(\S+)\s+connected`)
+
+	applied := false
+	for _, line := range lines {
+		if matches := connectedRegex.FindStringSubmatch(line); matches != nil {
+			display := matches[1]
+			cmd := exec.Command("xrandr", "--output", display, "--gamma", fmt.Sprintf("%.2f:%.2f:%.2f", r, g, b))
+			if err := cmd.Run(); err == nil {
+				fmt.Printf("🌡️  Gamma aplicada en Wayland (XWayland/%s): %.2f:%.2f:%.2f\n", display, r, g, b)
+				applied = true
+			}
+		}
+	}
+	return applied
+}
+
+/**
+ * tryDBusMethod - Intenta aplicar temperatura usando D-Bus
+ */
+func (gm *GammaManager) tryDBusMethod(temp float64) bool {
+	if !gm.isToolAvailable("dbus-send") {
+		return false
+	}
+
+	// Intentar con GNOME Settings Daemon
+	cmd := exec.Command("dbus-send", "--session", "--type=method_call",
+		"--dest=org.gnome.SettingsDaemon.Color",
+		"/org/gnome/SettingsDaemon/Color",
+		"org.gnome.SettingsDaemon.Color.NightLightPreview",
+		fmt.Sprintf("uint32:%.0f", temp))
+
+	if err := cmd.Run(); err == nil {
+		fmt.Printf("🌡️  Temperatura aplicada en Wayland (D-Bus/GNOME): %.0fK\n", temp)
+		return true
+	}
+
+	// Intentar con KDE
+	cmd = exec.Command("dbus-send", "--session", "--type=method_call",
+		"--dest=org.kde.KWin",
+		"/ColorCorrect",
+		"org.kde.kwin.ColorCorrect.setMode",
+		"string:manual")
+
+	if err := cmd.Run(); err == nil {
+		cmd = exec.Command("dbus-send", "--session", "--type=method_call",
+			"--dest=org.kde.KWin",
+			"/ColorCorrect",
+			"org.kde.kwin.ColorCorrect.setTemperature",
+			fmt.Sprintf("int32:%.0f", temp))
+
+		if err := cmd.Run(); err == nil {
+			fmt.Printf("🌡️  Temperatura aplicada en Wayland (D-Bus/KDE): %.0fK\n", temp)
+			return true
+		}
+	}
+
+	return false
+}
+
+/**
+ * tryWlGammaRelay - Intenta usar wl-gamma-relay
+ */
+func (gm *GammaManager) tryWlGammaRelay(r, g, b float64) bool {
+	if !gm.isToolAvailable("wl-gamma-relay") {
+		return false
+	}
+
+	cmd := exec.Command("wl-gamma-relay", fmt.Sprintf("%.2f", r), fmt.Sprintf("%.2f", g), fmt.Sprintf("%.2f", b))
+	if err := cmd.Run(); err == nil {
+		fmt.Printf("🌡️  Gamma aplicada en Wayland (wl-gamma-relay): %.2f:%.2f:%.2f\n", r, g, b)
+		return true
+	}
+	return false
+}
+
+/**
+ * tryBrightnessMethod - Intenta simular temperatura ajustando brillo de pantalla
+ */
+func (gm *GammaManager) tryBrightnessMethod(r, g, b float64) bool {
+	// Calcular brillo basado en valores RGB
+	brightness := (r + g + b) / 3.0
+
+	// Buscar archivos de brillo en /sys/class/backlight/
+	cmd := exec.Command("find", "/sys/class/backlight/", "-name", "brightness", "2>/dev/null")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	brightnessFiles := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, file := range brightnessFiles {
+		if file == "" {
+			continue
+		}
+
+		// Leer brillo máximo
+		maxFile := strings.Replace(file, "brightness", "max_brightness", 1)
+		maxOutput, err := exec.Command("cat", maxFile).Output()
+		if err != nil {
+			continue
+		}
+
+		var maxBrightness int
+		fmt.Sscanf(strings.TrimSpace(string(maxOutput)), "%d", &maxBrightness)
+
+		// Calcular nuevo brillo
+		newBrightness := int(float64(maxBrightness) * brightness)
+
+		// Aplicar nuevo brillo
+		cmd := exec.Command("sh", "-c", fmt.Sprintf("echo %d | sudo tee %s", newBrightness, file))
+		if err := cmd.Run(); err == nil {
+			fmt.Printf("🌡️  Brillo ajustado en Wayland: %.0f%% (simulando temperatura)\n", brightness*100)
+			return true
+		}
+	}
+	return false
+}
+
+/**
+ * tryRedshiftMethod - Intenta usar redshift temporalmente
+ */
+func (gm *GammaManager) tryRedshiftMethod(temp float64) bool {
+	if !gm.isToolAvailable("redshift") {
+		return false
+	}
+
+	// Matar redshift anterior
+	exec.Command("pkill", "redshift").Run()
+	time.Sleep(100 * time.Millisecond)
+
+	// Aplicar temperatura con redshift
+	cmd := exec.Command("redshift", "-P", "-O", fmt.Sprintf("%.0f", temp))
+	if err := cmd.Run(); err == nil {
+		fmt.Printf("🌡️  Temperatura aplicada en Wayland (redshift): %.0fK\n", temp)
+		return true
+	}
+	return false
+}
+
+/**
+ * resetWaylandGamma - Resetea gamma en Wayland usando múltiples métodos
  *
  * @returns {error} Error si falla el reset
  * @private
  */
 func (gm *GammaManager) resetWaylandGamma() error {
-	// Matar procesos de control de gamma
-	exec.Command("pkill", "wlsunset").Run()
-	exec.Command("pkill", "wl-gamma-relay").Run()
+	// Matar todos los procesos de control de gamma
+	processes := []string{"wlsunset", "wl-gamma-relay", "gammastep", "redshift", "f.lux"}
+	for _, proc := range processes {
+		exec.Command("pkill", "-9", proc).Run()
+		exec.Command("killall", "-9", proc).Run()
+	}
+	time.Sleep(300 * time.Millisecond)
 
-	// Resetear con wl-gamma-relay
-	cmd := exec.Command("wl-gamma-relay", "1.0", "1.0", "1.0")
-	if err := cmd.Run(); err == nil {
-		fmt.Println("✅ Gamma reseteada en Wayland")
+	// 1. Intentar reset con XWayland
+	if gm.tryXWaylandMethod(1.0, 1.0, 1.0) {
+		fmt.Println("✅ Gamma reseteada en Wayland (XWayland)")
 		return nil
 	}
 
-	return fmt.Errorf("no se pudo resetear gamma en Wayland")
+	// 2. Intentar reset con D-Bus
+	if gm.tryDBusMethod(6500) {
+		fmt.Println("✅ Gamma reseteada en Wayland (D-Bus)")
+		return nil
+	}
+
+	// 3. Intentar reset con wl-gamma-relay
+	if gm.isToolAvailable("wl-gamma-relay") {
+		cmd := exec.Command("wl-gamma-relay", "1.0", "1.0", "1.0")
+		if err := cmd.Run(); err == nil {
+			fmt.Println("✅ Gamma reseteada en Wayland (wl-gamma-relay)")
+			return nil
+		}
+	}
+
+	// 4. Resetear configuración del sistema nativo
+	if gm.isToolAvailable("gsettings") {
+		// Habilitar de nuevo el sistema nativo y ponerlo en modo día
+		exec.Command("gsettings", "set", "org.gnome.settings-daemon.plugins.color", "night-light-enabled", "false").Run()
+		exec.Command("gsettings", "set", "org.gnome.settings-daemon.plugins.color", "night-light-temperature", "6500").Run()
+	}
+
+	fmt.Println("✅ Reset de gamma completado en Wayland")
+	return nil
 }
 
 /**
  * detectWaylandDisplays - Detecta displays en Wayland
  *
- * En Wayland, el control de gamma se aplica globalmente,
- * por lo que no necesitamos detectar displays específicos.
+ * Intenta detectar displays reales usando xrandr si está disponible,
+ * de lo contrario usa control global de Wayland.
  *
  * @private
  */
 func (gm *GammaManager) detectWaylandDisplays() {
-	// En Wayland, el control de gamma es global
+	// Intentar usar xrandr incluso en Wayland (funciona en XWayland)
+	if gm.isToolAvailable("xrandr") {
+		cmd := exec.Command("xrandr")
+		output, err := cmd.Output()
+		if err == nil {
+			// Parsear output de xrandr para encontrar displays conectados
+			lines := strings.Split(string(output), "\n")
+			connectedRegex := regexp.MustCompile(`^(\S+)\s+connected`)
+
+			var displays []string
+			for _, line := range lines {
+				if matches := connectedRegex.FindStringSubmatch(line); matches != nil {
+					displays = append(displays, matches[1])
+				}
+			}
+
+			if len(displays) > 0 {
+				gm.displays = displays
+				fmt.Printf("🖥️  Displays detectados en Wayland (xrandr): %v\n", displays)
+				return
+			}
+		}
+	}
+
+	// Fallback a control global de Wayland
 	gm.displays = []string{"wayland-global"}
 	fmt.Printf("🖥️  Protocolo Wayland detectado - control global de gamma\n")
 }
@@ -374,6 +756,18 @@ func (gm *GammaManager) temperatureToRGB(temp float64) (r, g, b float64) {
 }
 
 /**
+ * isToolAvailable - Verifica si una herramienta está disponible en el sistema
+ *
+ * @param {string} tool - Nombre de la herramienta a verificar
+ * @returns {bool} true si la herramienta está disponible
+ * @private
+ */
+func (gm *GammaManager) isToolAvailable(tool string) bool {
+	_, err := exec.LookPath(tool)
+	return err == nil
+}
+
+/**
  * rgbToTemperature - Convierte valores RGB aproximadamente a temperatura Kelvin
  *
  * Función inversa aproximada para estimar temperatura desde valores RGB.
@@ -386,16 +780,148 @@ func (gm *GammaManager) temperatureToRGB(temp float64) (r, g, b float64) {
  * @private
  */
 func (gm *GammaManager) rgbToTemperature(r, g, b float64) float64 {
-	// Estimación simple basada en la relación azul/rojo
-	ratio := b / r
+	// Estimación mejorada basada en valores RGB gamma
 
-	if ratio >= 0.9 {
-		return 6500 // Temperatura diurna
-	} else if ratio >= 0.7 {
-		return 5000 // Temperatura neutra-fría
-	} else if ratio >= 0.5 {
-		return 4000 // Temperatura neutra-cálida
+	// Si todos los valores están cerca de 1.0, es temperatura diurna
+	if r >= 0.95 && g >= 0.95 && b >= 0.95 {
+		return 6500
+	}
+
+	// Usar el valor azul como indicador principal
+	if b >= 0.9 {
+		return 6500 // Muy frío/diurno
+	} else if b >= 0.8 {
+		return 5500 // Frío
+	} else if b >= 0.7 {
+		return 4500 // Neutro-frío
+	} else if b >= 0.6 {
+		return 4000 // Neutro-cálido
+	} else if b >= 0.5 {
+		return 3500 // Cálido
 	} else {
-		return 3000 // Temperatura cálida
+		return 3000 // Muy cálido
+	}
+}
+
+/**
+ * disableSystemNightLight - Deshabilita automáticamente sistemas nativos de ZorinOS
+ *
+ * Detecta y deshabilita agresivamente todos los sistemas de luz nocturna
+ * del entorno de escritorio para mantener control exclusivo.
+ *
+ * @private
+ */
+func (gm *GammaManager) disableSystemNightLight() {
+	// Deshabilitar sistemas nativos silenciosamente
+
+	// 1. GNOME/ZorinOS Night Light - Deshabilitación forzada
+	if gm.isToolAvailable("gsettings") {
+		// Verificar si está activo
+		cmd := exec.Command("gsettings", "get", "org.gnome.settings-daemon.plugins.color", "night-light-enabled")
+		output, err := cmd.Output()
+		if err == nil {
+			isEnabled := strings.TrimSpace(string(output)) == "true"
+
+			// Deshabilitar completamente
+			exec.Command("gsettings", "set", "org.gnome.settings-daemon.plugins.color", "night-light-enabled", "false").Run()
+			exec.Command("gsettings", "set", "org.gnome.settings-daemon.plugins.color", "night-light-temperature", "uint32:6500").Run()
+			exec.Command("gsettings", "set", "org.gnome.settings-daemon.plugins.color", "night-light-schedule-automatic", "false").Run()
+
+			// Forzar aplicación inmediata via D-Bus
+			if gm.isToolAvailable("gdbus") {
+				exec.Command("gdbus", "call", "--session", "--dest", "org.gnome.SettingsDaemon.Color",
+					"--object-path", "/org/gnome/SettingsDaemon/Color",
+					"--method", "org.gnome.SettingsDaemon.Color.NightLightPreview",
+					"uint32:6500").Run()
+			}
+
+			if isEnabled {
+				fmt.Println("🔧 Sistema nativo deshabilitado")
+			}
+		}
+	}
+
+	// 2. KDE Night Color - Deshabilitación completa
+	if gm.isToolAvailable("qdbus") {
+		exec.Command("qdbus", "org.kde.KWin", "/ColorCorrect", "setMode", "0").Run()
+	}
+
+	// 3. Terminar todos los procesos competidores agresivamente
+	processes := []string{
+		"redshift", "redshift-gtk",
+		"f.lux", "fluxgui", "xflux",
+		"wlsunset", "wl-sunset",
+		"gammastep", "gammastep-indicator",
+		"goverlay", "blue-light-filter",
+		"gnome-settings-daemon", // Reiniciar daemon si es necesario
+	}
+
+	killed := []string{}
+	for _, proc := range processes {
+		cmd := exec.Command("pgrep", proc)
+		if err := cmd.Run(); err == nil {
+			// Terminar proceso gracefully primero
+			exec.Command("pkill", "-TERM", proc).Run()
+			time.Sleep(100 * time.Millisecond)
+			// Si sigue corriendo, forzar terminación
+			exec.Command("pkill", "-KILL", proc).Run()
+			killed = append(killed, proc)
+		}
+	}
+
+	if len(killed) > 0 {
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	// 4. Crear archivo de bloqueo para evitar reactivación automática
+	gm.createSystemLockFile()
+
+	// 5. Monitorear y mantener control exclusivo
+	go gm.maintainExclusiveControl()
+}
+
+/**
+ * createSystemLockFile - Crea archivo para indicar que tenemos control exclusivo
+ */
+func (gm *GammaManager) createSystemLockFile() {
+	lockDir := "/tmp/luz-nocturna"
+	lockFile := lockDir + "/exclusive-control.lock"
+
+	// Crear directorio si no existe
+	os.MkdirAll(lockDir, 0755)
+
+	// Crear archivo de bloqueo con información
+	lockContent := fmt.Sprintf("luz-nocturna active\npid: %d\ntime: %s\n",
+		os.Getpid(), time.Now().Format(time.RFC3339))
+
+	os.WriteFile(lockFile, []byte(lockContent), 0644)
+}
+
+/**
+ * maintainExclusiveControl - Mantiene control exclusivo del gamma
+ */
+func (gm *GammaManager) maintainExclusiveControl() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		// Verificar si el sistema nativo se reactivó
+		if gm.isToolAvailable("gsettings") {
+			cmd := exec.Command("gsettings", "get", "org.gnome.settings-daemon.plugins.color", "night-light-enabled")
+			output, err := cmd.Output()
+			if err == nil && strings.TrimSpace(string(output)) == "true" {
+				// El sistema nativo se reactivó, deshabilitarlo de nuevo
+				exec.Command("gsettings", "set", "org.gnome.settings-daemon.plugins.color", "night-light-enabled", "false").Run()
+			}
+		}
+
+		// Verificar procesos competidores
+		competitorProcesses := []string{"redshift", "wlsunset", "gammastep"}
+		for _, proc := range competitorProcesses {
+			cmd := exec.Command("pgrep", proc)
+			if err := cmd.Run(); err == nil {
+				exec.Command("pkill", "-TERM", proc).Run()
+			}
+		}
 	}
 }

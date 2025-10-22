@@ -1,8 +1,10 @@
 package controllers
 
 import (
+	"fmt"
 	"luznocturna/luz-nocturna/internal/models"
 	"luznocturna/luz-nocturna/internal/system"
+	"time"
 )
 
 /**
@@ -21,6 +23,7 @@ type NightLightController struct {
 	config       *models.NightLightConfig
 	appConfig    *models.AppConfig
 	gammaManager *system.GammaManager
+	scheduler    *models.Scheduler
 }
 
 /**
@@ -46,6 +49,17 @@ func NewNightLightController() *NightLightController {
 	// Cargar configuración guardada
 	if err := controller.appConfig.Load(); err == nil {
 		controller.config.SetTemperature(controller.appConfig.LastTemperature)
+	}
+
+	// Inicializar programador con callback para aplicar temperatura
+	controller.scheduler = models.NewScheduler(controller.appConfig, func(temp float64) error {
+		controller.config.SetTemperature(temp)
+		return controller.gammaManager.ApplyTemperature(temp)
+	})
+
+	// Iniciar programación automática si está habilitada
+	if controller.appConfig.ScheduleEnabled {
+		controller.scheduler.Start()
 	}
 
 	return controller
@@ -113,4 +127,64 @@ func (c *NightLightController) GetTemperatureRange() (min, max float64) {
 // GetDisplays devuelve la lista de displays detectados
 func (c *NightLightController) GetDisplays() []string {
 	return c.gammaManager.GetDisplays()
+}
+
+// === MÉTODOS DE PROGRAMACIÓN AUTOMÁTICA ===
+
+// EnableSchedule habilita la programación automática
+func (c *NightLightController) EnableSchedule(enabled bool) {
+	c.appConfig.ScheduleEnabled = enabled
+	c.appConfig.Save()
+
+	if enabled {
+		c.scheduler.Start()
+	} else {
+		c.scheduler.Stop()
+	}
+
+	c.scheduler.UpdateConfig(c.appConfig)
+}
+
+// IsScheduleEnabled verifica si la programación está habilitada
+func (c *NightLightController) IsScheduleEnabled() bool {
+	return c.appConfig.ScheduleEnabled
+}
+
+// IsScheduleRunning verifica si el programador está ejecutándose
+func (c *NightLightController) IsScheduleRunning() bool {
+	return c.scheduler.IsRunning()
+}
+
+// UpdateScheduleConfig actualiza la configuración de horarios
+func (c *NightLightController) UpdateScheduleConfig(startTime, endTime string, nightTemp, dayTemp float64, transitionTime int) {
+	c.appConfig.Schedule.StartTime = startTime
+	c.appConfig.Schedule.EndTime = endTime
+	c.appConfig.Schedule.NightTemp = nightTemp
+	c.appConfig.Schedule.DayTemp = dayTemp
+	c.appConfig.Schedule.TransitionTime = transitionTime
+	c.appConfig.Save()
+
+	c.scheduler.UpdateConfig(c.appConfig)
+}
+
+// GetScheduleConfig obtiene la configuración actual de horarios
+func (c *NightLightController) GetScheduleConfig() models.ScheduleConfig {
+	return c.appConfig.Schedule
+}
+
+// GetNextScheduleChange obtiene información sobre el próximo cambio programado
+func (c *NightLightController) GetNextScheduleChange() (string, float64, time.Duration) {
+	return c.scheduler.GetNextScheduleChange()
+}
+
+// ApplyScheduleNow aplica inmediatamente la temperatura correspondiente al horario actual
+func (c *NightLightController) ApplyScheduleNow() error {
+	if !c.appConfig.ScheduleEnabled {
+		return fmt.Errorf("la programación automática está deshabilitada")
+	}
+
+	// El scheduler aplicará automáticamente la temperatura correcta
+	c.scheduler.Stop()
+	c.scheduler.Start()
+	return nil
 }
